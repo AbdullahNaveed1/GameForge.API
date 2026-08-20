@@ -27,3 +27,21 @@ public record UpdateStatsDto(
     [Range(0, 10000)] int Health,
     [Range(0, 10000)] int Mana
 );
+
+// New DTO for Day 7: Dynamic Combat Sheet
+public record CharacterCombatStatsDto(
+    Guid CharacterId,
+    string Name,
+    string CharacterClass,
+    int Level,
+    int Experience,
+    int BaseHealth,
+    int BaseMana,
+    int BaseAttack,
+    int BaseDefense,
+    int GearAttackBonus,
+    int GearDefenseBonus,
+    int TotalAttack,
+    int TotalDefense,
+    List<InventoryItemResponseDto> EquippedGear
+);

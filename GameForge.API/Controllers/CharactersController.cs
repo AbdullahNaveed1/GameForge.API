@@ -14,11 +14,7 @@ namespace GameForge.API.Controllers;
 public class CharactersController : ControllerBase
 {
     private readonly AppDbContext _context;
-    private const int MaxCharactersPerPlayer = 4;
-    private static readonly HashSet<string> AllowedClasses = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Warrior", "Mage", "Rogue", "Archer"
-    };
+    private const int MaxActiveCharacters = 4;
 
     public CharactersController(AppDbContext context)
     {
@@ -30,10 +26,10 @@ public class CharactersController : ControllerBase
     public async Task<ActionResult<IEnumerable<CharacterResponseDto>>> GetMyCharacters()
     {
         var playerId = GetCurrentPlayerId();
-        if (playerId == null) return Unauthorized("Invalid token claims.");
+        if (playerId == null) return Unauthorized();
 
         var characters = await _context.Characters
-            .Where(c => c.PlayerId == playerId.Value)
+            .Where(c => c.PlayerId == playerId)
             .Select(c => new CharacterResponseDto(
                 c.Id,
                 c.Name,
@@ -54,10 +50,10 @@ public class CharactersController : ControllerBase
     public async Task<ActionResult<CharacterResponseDto>> GetCharacterById(Guid id)
     {
         var playerId = GetCurrentPlayerId();
-        if (playerId == null) return Unauthorized("Invalid token claims.");
+        if (playerId == null) return Unauthorized();
 
         var character = await _context.Characters
-            .FirstOrDefaultAsync(c => c.Id == id && c.PlayerId == playerId.Value);
+            .FirstOrDefaultAsync(c => c.Id == id && c.PlayerId == playerId);
 
         if (character == null) return NotFound("Character not found.");
 
@@ -71,6 +67,78 @@ public class CharactersController : ControllerBase
             character.Mana,
             character.CreatedAt
         ));
+    }
+
+    // GET: api/characters/{id}/stats
+    [HttpGet("{id:guid}/stats")]
+    public async Task<ActionResult<CharacterCombatStatsDto>> GetCharacterCombatStats(Guid id)
+    {
+        var playerId = GetCurrentPlayerId();
+        if (playerId == null) return Unauthorized();
+
+        var character = await _context.Characters
+            .Include(c => c.Inventory)
+                .ThenInclude(ii => ii.Item)
+            .FirstOrDefaultAsync(c => c.Id == id && c.PlayerId == playerId);
+
+        if (character == null) return NotFound("Character not found.");
+
+        // Dynamic base stats scaling with level and class
+        int baseAttack = character.CharacterClass.ToLower() switch
+        {
+            "warrior" => 20 + (character.Level * 4),
+            "mage" => 8 + (character.Level * 2),
+            "rogue" => 15 + (character.Level * 3),
+            _ => 10 + (character.Level * 2)
+        };
+
+        int baseDefense = character.CharacterClass.ToLower() switch
+        {
+            "warrior" => 15 + (character.Level * 3),
+            "mage" => 5 + (character.Level * 1),
+            "rogue" => 10 + (character.Level * 2),
+            _ => 5 + (character.Level * 1)
+        };
+
+        // Aggregating gear bonuses
+        var equippedItems = character.Inventory.Where(ii => ii.IsEquipped).ToList();
+
+        int gearAttackBonus = equippedItems.Sum(ei => ei.Item.AttackBonus);
+        int gearDefenseBonus = equippedItems.Sum(ei => ei.Item.DefenseBonus);
+
+        var equippedGearDto = equippedItems.Select(ii => new InventoryItemResponseDto(
+            ii.Id,
+            ii.ItemId,
+            ii.Item.Name,
+            ii.Item.Description,
+            ii.Item.Type.ToString(),
+            ii.Item.Rarity.ToString(),
+            ii.Quantity,
+            ii.IsEquipped,
+            ii.Item.AttackBonus,
+            ii.Item.DefenseBonus,
+            ii.Item.HealthRestore,
+            ii.Item.ManaRestore
+        )).ToList();
+
+        var statsDto = new CharacterCombatStatsDto(
+            character.Id,
+            character.Name,
+            character.CharacterClass,
+            character.Level,
+            character.Experience,
+            character.Health,
+            character.Mana,
+            baseAttack,
+            baseDefense,
+            gearAttackBonus,
+            gearDefenseBonus,
+            baseAttack + gearAttackBonus,
+            baseDefense + gearDefenseBonus,
+            equippedGearDto
+        );
+
+        return Ok(statsDto);
     }
 
     // POST: api/characters
@@ -78,85 +146,31 @@ public class CharactersController : ControllerBase
     public async Task<ActionResult<CharacterResponseDto>> CreateCharacter(CreateCharacterDto dto)
     {
         var playerId = GetCurrentPlayerId();
-        if (playerId == null) return Unauthorized("Invalid token claims.");
+        if (playerId == null) return Unauthorized();
 
-        // Rule 1: Validate Character Class
-        if (!AllowedClasses.Contains(dto.CharacterClass))
+        var activeCount = await _context.Characters.CountAsync(c => c.PlayerId == playerId);
+        if (activeCount >= MaxActiveCharacters)
         {
-            return BadRequest($"Invalid class. Allowed classes are: {string.Join(", ", AllowedClasses)}");
+            return BadRequest($"Maximum character limit ({MaxActiveCharacters}) reached.");
         }
 
-        // Rule 2: Enforce Slot Limit (Max 4 per player)
-        var characterCount = await _context.Characters.CountAsync(c => c.PlayerId == playerId.Value);
-        if (characterCount >= MaxCharactersPerPlayer)
+        var validClasses = new[] { "Warrior", "Mage", "Rogue" };
+        if (!validClasses.Contains(dto.CharacterClass, StringComparer.OrdinalIgnoreCase))
         {
-            return BadRequest($"Character limit reached ({MaxCharactersPerPlayer} max per account).");
+            return BadRequest("Invalid class. Choose from Warrior, Mage, or Rogue.");
         }
-
-        // Rule 3: Enforce Unique Name
-        var nameExists = await _context.Characters.AnyAsync(c => c.Name.ToLower() == dto.Name.ToLower());
-        if (nameExists)
-        {
-            return BadRequest("Character name is already taken.");
-        }
-
-        // Set base stats based on class archetype
-        var (baseHp, baseMana) = GetBaseStats(dto.CharacterClass);
 
         var character = new Character
         {
             Name = dto.Name,
             CharacterClass = dto.CharacterClass,
-            Health = baseHp,
-            Mana = baseMana,
             PlayerId = playerId.Value
         };
 
         _context.Characters.Add(character);
         await _context.SaveChangesAsync();
 
-        var response = new CharacterResponseDto(
-            character.Id,
-            character.Name,
-            character.CharacterClass,
-            character.Level,
-            character.Experience,
-            character.Health,
-            character.Mana,
-            character.CreatedAt
-        );
-
-        return CreatedAtAction(nameof(GetCharacterById), new { id = character.Id }, response);
-    }
-
-    // POST: api/characters/{id}/gain-experience
-    [HttpPost("{id:guid}/gain-experience")]
-    public async Task<ActionResult<CharacterResponseDto>> AddExperience(Guid id, AddExperienceDto dto)
-    {
-        var playerId = GetCurrentPlayerId();
-        if (playerId == null) return Unauthorized("Invalid token claims.");
-
-        var character = await _context.Characters
-            .FirstOrDefaultAsync(c => c.Id == id && c.PlayerId == playerId.Value);
-
-        if (character == null) return NotFound("Character not found.");
-
-        character.Experience += dto.Amount;
-
-        // Level-up curve: Level * 100 XP required per tier
-        while (character.Experience >= GetXpRequiredForNextLevel(character.Level))
-        {
-            character.Experience -= GetXpRequiredForNextLevel(character.Level);
-            character.Level++;
-
-            // Stat growth per level
-            character.Health += 20;
-            character.Mana += 10;
-        }
-
-        await _context.SaveChangesAsync();
-
-        return Ok(new CharacterResponseDto(
+        return CreatedAtAction(nameof(GetCharacterById), new { id = character.Id }, new CharacterResponseDto(
             character.Id,
             character.Name,
             character.CharacterClass,
@@ -168,20 +182,28 @@ public class CharactersController : ControllerBase
         ));
     }
 
-    // PUT: api/characters/{id}/stats
-    [HttpPut("{id:guid}/stats")]
-    public async Task<ActionResult<CharacterResponseDto>> UpdateStats(Guid id, UpdateStatsDto dto)
+    // PUT: api/characters/{id}/experience
+    [HttpPut("{id:guid}/experience")]
+    public async Task<ActionResult<CharacterResponseDto>> AddExperience(Guid id, AddExperienceDto dto)
     {
         var playerId = GetCurrentPlayerId();
-        if (playerId == null) return Unauthorized("Invalid token claims.");
+        if (playerId == null) return Unauthorized();
 
         var character = await _context.Characters
-            .FirstOrDefaultAsync(c => c.Id == id && c.PlayerId == playerId.Value);
+            .FirstOrDefaultAsync(c => c.Id == id && c.PlayerId == playerId);
 
         if (character == null) return NotFound("Character not found.");
 
-        character.Health = dto.Health;
-        character.Mana = dto.Mana;
+        character.Experience += dto.Amount;
+
+        // Level-up curve calculation
+        while (character.Experience >= (character.Level * 100))
+        {
+            character.Experience -= (character.Level * 100);
+            character.Level++;
+            character.Health += 20;
+            character.Mana += 10;
+        }
 
         await _context.SaveChangesAsync();
 
@@ -202,10 +224,10 @@ public class CharactersController : ControllerBase
     public async Task<IActionResult> DeleteCharacter(Guid id)
     {
         var playerId = GetCurrentPlayerId();
-        if (playerId == null) return Unauthorized("Invalid token claims.");
+        if (playerId == null) return Unauthorized();
 
         var character = await _context.Characters
-            .FirstOrDefaultAsync(c => c.Id == id && c.PlayerId == playerId.Value);
+            .FirstOrDefaultAsync(c => c.Id == id && c.PlayerId == playerId);
 
         if (character == null) return NotFound("Character not found.");
 
@@ -217,17 +239,7 @@ public class CharactersController : ControllerBase
 
     private Guid? GetCurrentPlayerId()
     {
-        var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return Guid.TryParse(claim, out var guid) ? guid : null;
+        var playerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return Guid.TryParse(playerIdClaim, out var playerId) ? playerId : null;
     }
-
-    private static int GetXpRequiredForNextLevel(int currentLevel) => currentLevel * 100;
-
-    private static (int Health, int Mana) GetBaseStats(string characterClass) => characterClass.ToLower() switch
-    {
-        "mage" => (70, 120),
-        "rogue" => (90, 60),
-        "archer" => (85, 70),
-        _ => (120, 40) // Default / Warrior
-    };
 }

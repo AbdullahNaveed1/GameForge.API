@@ -36,15 +36,17 @@ public class Item
 
     public ItemRarity Rarity { get; set; } = ItemRarity.Common;
 
-    public int Value { get; set; } = 0; // Gold / currency value
+    public int Value { get; set; } = 0;
 
-    public int MaxStack { get; set; } = 1; // 1 for gear, 99 for potions/materials
+    public int MaxStack { get; set; } = 1;
 
-    // Stat Modifiers
     public int AttackBonus { get; set; } = 0;
     public int DefenseBonus { get; set; } = 0;
     public int HealthRestore { get; set; } = 0;
     public int ManaRestore { get; set; } = 0;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // Add this navigation property inside the class:
+    public ICollection<InventoryItem> InventoryItems { get; set; } = new List<InventoryItem>();
 }

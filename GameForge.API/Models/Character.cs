@@ -27,7 +27,10 @@ public class Character
     [Required]
     public Guid PlayerId { get; set; }
 
-    // Navigation Property
+    // Navigation Property to Player
     [ForeignKey(nameof(PlayerId))]
     public Player Player { get; set; } = null!;
+
+    // Navigation Property to Inventory
+    public ICollection<InventoryItem> Inventory { get; set; } = new List<InventoryItem>();
 }

@@ -10,19 +10,34 @@ public class AppDbContext : DbContext
     public DbSet<Player> Players => Set<Player>();
     public DbSet<Character> Characters => Set<Character>();
     public DbSet<Item> Items => Set<Item>();
+    public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>(); // Register DbSet
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // 1-to-Many: One Player has Many Characters
+        // Player -> Character (1-to-Many)
         modelBuilder.Entity<Character>()
             .HasOne(c => c.Player)
             .WithMany(p => p.Characters)
             .HasForeignKey(c => c.PlayerId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Static seed timestamp so EF Core doesn't throw pending model warning
+        // Character -> InventoryItem (1-to-Many)
+        modelBuilder.Entity<InventoryItem>()
+            .HasOne(ii => ii.Character)
+            .WithMany(c => c.Inventory)
+            .HasForeignKey(ii => ii.CharacterId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Item -> InventoryItem (1-to-Many)
+        modelBuilder.Entity<InventoryItem>()
+            .HasOne(ii => ii.Item)
+            .WithMany(i => i.InventoryItems)
+            .HasForeignKey(ii => ii.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Static seed timestamp
         var seedDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
         modelBuilder.Entity<Item>().HasData(

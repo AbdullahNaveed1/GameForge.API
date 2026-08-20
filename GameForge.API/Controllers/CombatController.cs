@@ -2,6 +2,7 @@
 using GameForge.API.Data;
 using GameForge.API.DTOs;
 using GameForge.API.Models;
+using GameForge.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,10 +15,12 @@ namespace GameForge.API.Controllers;
 public class CombatController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ILeaderboardService _leaderboardService;
 
-    public CombatController(AppDbContext context)
+    public CombatController(AppDbContext context, ILeaderboardService leaderboardService)
     {
         _context = context;
+        _leaderboardService = leaderboardService;
     }
 
     // GET: api/combat/monsters
@@ -75,7 +78,6 @@ public class CombatController : ControllerBase
             return BadRequest("Character has fallen and must rest or heal before battling.");
         }
 
-        // Calculate Character equipment attack and defense bonuses
         int weaponAttackBonus = character.Inventory
             .Where(i => i.IsEquipped && i.Item != null && i.Item.Type == ItemType.Weapon)
             .Sum(i => i.Item!.AttackBonus);
@@ -91,10 +93,8 @@ public class CombatController : ControllerBase
         var logs = new List<BattleTurnLogDto>();
         int round = 1;
 
-        // Turn-based battle loop
         while (character.Health > 0 && monsterCurrentHealth > 0 && round <= 20)
         {
-            // 1. Character attacks Monster
             int playerDamage = Math.Max(1, charTotalAttack - monster.Defense);
             monsterCurrentHealth = Math.Max(0, monsterCurrentHealth - playerDamage);
 
@@ -111,7 +111,6 @@ public class CombatController : ControllerBase
                 break;
             }
 
-            // 2. Monster retaliates against Character
             int monsterDamage = Math.Max(1, monster.AttackPower - charTotalDefense);
             character.Health = Math.Max(0, character.Health - monsterDamage);
 
@@ -135,7 +134,6 @@ public class CombatController : ControllerBase
             awardedExp = monster.ExperienceReward;
             character.Experience += awardedExp;
 
-            // Check level-up progression
             while (character.Experience >= (character.Level * 100))
             {
                 character.Experience -= (character.Level * 100);
@@ -144,7 +142,6 @@ public class CombatController : ControllerBase
                 character.Mana += 10;
             }
 
-            // Roll for loot drop (50% chance if loot item assigned)
             var rng = new Random();
             if (monster.LootItem != null && rng.Next(1, 101) <= 50)
             {
@@ -168,6 +165,10 @@ public class CombatController : ControllerBase
                     });
                 }
             }
+
+            // Sync score to Redis Leaderboard
+            double totalScore = (character.Level * 10000) + character.Experience;
+            await _leaderboardService.UpdateCharacterRankAsync(character.Name, totalScore);
         }
 
         await _context.SaveChangesAsync();

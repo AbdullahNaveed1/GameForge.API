@@ -21,6 +21,9 @@ public class Character
     public int Health { get; set; } = 100;
     public int Mana { get; set; } = 50;
 
+    // Currency balance for Market / Auction House
+    public int Gold { get; set; } = 100;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // Foreign Key linking to Player

@@ -16,6 +16,7 @@ public class AppDbContext : DbContext
     public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
     public DbSet<Quest> Quests => Set<Quest>();
     public DbSet<Monster> Monsters => Set<Monster>();
+    public DbSet<AuctionListing> AuctionListings => Set<AuctionListing>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -63,6 +64,19 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(m => m.LootItemId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        // AuctionListing Relationships
+        modelBuilder.Entity<AuctionListing>()
+            .HasOne(a => a.SellerCharacter)
+            .WithMany()
+            .HasForeignKey(a => a.SellerCharacterId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<AuctionListing>()
+            .HasOne(a => a.Item)
+            .WithMany()
+            .HasForeignKey(a => a.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Seed Items Catalog
         modelBuilder.Entity<Item>().HasData(
@@ -165,7 +179,7 @@ public class AppDbContext : DbContext
                 AttackPower = 8,
                 Defense = 2,
                 ExperienceReward = 35,
-                LootItemId = Guid.Parse("44444444-4444-4444-4444-444444444444") // Drops Health Potion
+                LootItemId = Guid.Parse("44444444-4444-4444-4444-444444444444")
             },
             new Monster
             {
@@ -176,7 +190,7 @@ public class AppDbContext : DbContext
                 AttackPower = 15,
                 Defense = 5,
                 ExperienceReward = 80,
-                LootItemId = Guid.Parse("11111111-1111-1111-1111-111111111111") // Drops Rusty Sword
+                LootItemId = Guid.Parse("11111111-1111-1111-1111-111111111111")
             },
             new Monster
             {
@@ -187,7 +201,7 @@ public class AppDbContext : DbContext
                 AttackPower = 35,
                 Defense = 12,
                 ExperienceReward = 250,
-                LootItemId = Guid.Parse("33333333-3333-3333-3333-333333333333") // Drops Dragon Slayer Blade
+                LootItemId = Guid.Parse("33333333-3333-3333-3333-333333333333")
             }
         );
     }

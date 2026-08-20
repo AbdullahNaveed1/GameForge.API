@@ -1,0 +1,33 @@
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace GameForge.API.Models;
+
+public class Character
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [Required]
+    [MaxLength(32)]
+    public string Name { get; set; } = string.Empty;
+
+    [Required]
+    [MaxLength(20)]
+    public string CharacterClass { get; set; } = "Warrior"; // e.g., Warrior, Mage, Rogue
+
+    public int Level { get; set; } = 1;
+    public int Experience { get; set; } = 0;
+    public int Health { get; set; } = 100;
+    public int Mana { get; set; } = 50;
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // Foreign Key linking to Player
+    [Required]
+    public Guid PlayerId { get; set; }
+
+    // Navigation Property
+    [ForeignKey(nameof(PlayerId))]
+    public Player Player { get; set; } = null!;
+}

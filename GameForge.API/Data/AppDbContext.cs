@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<Item> Items => Set<Item>();
     public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
     public DbSet<Quest> Quests => Set<Quest>();
+    public DbSet<Monster> Monsters => Set<Monster>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -54,6 +55,13 @@ public class AppDbContext : DbContext
             .HasOne(q => q.GuaranteedItemReward)
             .WithMany()
             .HasForeignKey(q => q.GuaranteedItemRewardId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // Monster - Item Loot relationship
+        modelBuilder.Entity<Monster>()
+            .HasOne(m => m.LootItem)
+            .WithMany()
+            .HasForeignKey(m => m.LootItemId)
             .OnDelete(DeleteBehavior.SetNull);
 
         // Seed Items Catalog
@@ -143,6 +151,43 @@ public class AppDbContext : DbContext
                 RequiredLevel = 2,
                 ExperienceReward = 150,
                 GuaranteedItemRewardId = Guid.Parse("22222222-2222-2222-2222-222222222222")
+            }
+        );
+
+        // Seed Monsters Catalog
+        modelBuilder.Entity<Monster>().HasData(
+            new Monster
+            {
+                Id = Guid.Parse("20000000-0000-0000-0000-000000000001"),
+                Name = "Goblin Scout",
+                Level = 1,
+                MaxHealth = 40,
+                AttackPower = 8,
+                Defense = 2,
+                ExperienceReward = 35,
+                LootItemId = Guid.Parse("44444444-4444-4444-4444-444444444444") // Drops Health Potion
+            },
+            new Monster
+            {
+                Id = Guid.Parse("20000000-0000-0000-0000-000000000002"),
+                Name = "Skeleton Warrior",
+                Level = 2,
+                MaxHealth = 75,
+                AttackPower = 15,
+                Defense = 5,
+                ExperienceReward = 80,
+                LootItemId = Guid.Parse("11111111-1111-1111-1111-111111111111") // Drops Rusty Sword
+            },
+            new Monster
+            {
+                Id = Guid.Parse("20000000-0000-0000-0000-000000000003"),
+                Name = "Forest Drake",
+                Level = 4,
+                MaxHealth = 200,
+                AttackPower = 35,
+                Defense = 12,
+                ExperienceReward = 250,
+                LootItemId = Guid.Parse("33333333-3333-3333-3333-333333333333") // Drops Dragon Slayer Blade
             }
         );
     }

@@ -1,5 +1,6 @@
 using System.Text;
 using GameForge.API.Data;
+using GameForge.API.Hubs;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
@@ -11,11 +12,26 @@ var builder = WebApplication.CreateBuilder(args);
 // Add Controllers
 builder.Services.AddControllers();
 
+// Add SignalR Real-Time Services
+builder.Services.AddSignalR();
+
+// Configure CORS for WebSocket clients (Unity / Web / Postman)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.SetIsOriginAllowed(_ => true)
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials();
+    });
+});
+
 // Register PostgreSQL DbContext
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Configure JWT Authentication
+// Configure JWT Authentication with SignalR WebSocket Support
 var jwtKey = builder.Configuration["Jwt:Key"]!;
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -29,6 +45,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidAudience = builder.Configuration["Jwt:Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        };
+
+        // Extract token from query string for WebSockets / SignalR
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/game"))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            }
         };
     });
 
@@ -84,10 +115,15 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Enable CORS
+app.UseCors("AllowAll");
+
 // Authentication MUST come before Authorization
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Map REST Controllers and SignalR Hub Route
 app.MapControllers();
+app.MapHub<GameHub>("/hubs/game");
 
 app.Run();

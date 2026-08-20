@@ -1,0 +1,114 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GameForge Real-Time Lobby Test</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1e1e1e;
+            color: #fff;
+        }
+
+        input, button {
+            padding: 8px;
+            margin: 4px;
+        }
+
+        #chatBox {
+            border: 1px solid #444;
+            height: 250px;
+            overflow-y: scroll;
+            padding: 10px;
+            background: #111;
+        }
+
+        .system {
+            color: #aaa;
+            font-style: italic;
+        }
+
+        .msg {
+            margin: 4px 0;
+        }
+    </style>
+</head>
+<body>
+    <h2>⚔️ GameForge Real-Time Lobby</h2>
+
+    <div>
+        <label>JWT Access Token:</label><br>
+        <input type="text" id="tokenInput" style="width: 80%;" placeholder="Paste your JWT token here"><br>
+        <button onclick="connect()">Connect to Hub</button>
+    </div>
+
+    <hr>
+
+    <div id="chatBox"></div>
+
+    <div style="margin-top: 10px;">
+        <input type="text" id="msgInput" placeholder="Type a global message..." style="width: 60%;">
+        <button onclick="sendMessage()">Send Global Message</button>
+    </div>
+
+    <script>
+        let connection = null;
+
+        function log(text, isSystem = false) {
+            const chatBox = document.getElementById("chatBox");
+            const div = document.createElement("div");
+            div.className = isSystem ? "system" : "msg";
+            div.innerText = text;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        async function connect() {
+            const token = document.getElementById("tokenInput").value.trim();
+            if (!token) return alert("Please enter a JWT token!");
+
+            connection = new signalR.HubConnectionBuilder()
+                .withUrl("https://localhost:7252/hubs/game?access_token=" + encodeURIComponent(token))
+                .withAutomaticReconnect()
+                .build();
+
+            connection.on("PlayerJoined", (username) => {
+                log(`⚡ ${username} has entered the tavern.`, true);
+            });
+
+            connection.on("PlayerLeft", (username) => {
+                log(`💨 ${username} left the lobby.`, true);
+            });
+
+            connection.on("OnlinePlayersList", (players) => {
+                log(`👥 Online heroes: ${players.join(", ")}`, true);
+            });
+
+            connection.on("ReceiveGlobalMessage", (user, message, time) => {
+                log(`[${time}] ${user}: ${message}`);
+            });
+
+            try {
+                await connection.start();
+                log(" Connected to GameHub successfully!", true);
+            } catch (err) {
+                log("❌ Connection failed: " + err.toString(), true);
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById("msgInput");
+            if (!connection || !input.value.trim()) return;
+
+            try {
+                await connection.invoke("SendGlobalMessage", input.value);
+                input.value = "";
+            } catch (err) {
+                console.error(err);
+            }
+        }
+    </script>
+</body>
+</html>

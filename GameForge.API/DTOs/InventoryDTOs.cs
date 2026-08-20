@@ -21,3 +21,10 @@ public record InventoryItemResponseDto(
     int HealthRestore,
     int ManaRestore
 );
+public record UseItemResponseDto(
+    string Message,
+    int RestoredAmount,
+    int CurrentHealth,
+    int CurrentMana,
+    int RemainingQuantity
+);

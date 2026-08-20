@@ -62,7 +62,6 @@ public class InventoryController : ControllerBase
         var item = await _context.Items.FindAsync(dto.ItemId);
         if (item == null) return NotFound("Item does not exist in catalog.");
 
-        // Check if stackable item already exists in inventory
         var existingInventoryItem = await _context.InventoryItems
             .FirstOrDefaultAsync(ii => ii.CharacterId == characterId && ii.ItemId == dto.ItemId && !ii.IsEquipped);
 
@@ -87,7 +86,6 @@ public class InventoryController : ControllerBase
             ));
         }
 
-        // Enforce inventory slot capacity
         var currentSlotCount = await _context.InventoryItems.CountAsync(ii => ii.CharacterId == characterId);
         if (currentSlotCount >= MaxInventorySlots)
         {
@@ -121,6 +119,69 @@ public class InventoryController : ControllerBase
         ));
     }
 
+    // POST: api/characters/{characterId}/inventory/{inventoryItemId}/use
+    [HttpPost("{inventoryItemId:guid}/use")]
+    public async Task<ActionResult<UseItemResponseDto>> UseItem(Guid characterId, Guid inventoryItemId)
+    {
+        var character = await VerifyCharacterOwnership(characterId);
+        if (character == null) return NotFound("Character not found or unauthorized.");
+
+        var inventoryItem = await _context.InventoryItems
+            .Include(ii => ii.Item)
+            .FirstOrDefaultAsync(ii => ii.Id == inventoryItemId && ii.CharacterId == characterId);
+
+        if (inventoryItem == null) return NotFound("Item not found in inventory.");
+
+        if (inventoryItem.Item.Type != ItemType.Consumable)
+        {
+            return BadRequest("Only consumable items can be used.");
+        }
+
+        // Dynamic resource caps based on character level
+        int maxHealth = 100 + ((character.Level - 1) * 20);
+        int maxMana = 50 + ((character.Level - 1) * 10);
+
+        int restoredHealth = 0;
+        int restoredMana = 0;
+
+        if (inventoryItem.Item.HealthRestore > 0)
+        {
+            int previousHealth = character.Health;
+            character.Health = Math.Min(maxHealth, character.Health + inventoryItem.Item.HealthRestore);
+            restoredHealth = character.Health - previousHealth;
+        }
+
+        if (inventoryItem.Item.ManaRestore > 0)
+        {
+            int previousMana = character.Mana;
+            character.Mana = Math.Min(maxMana, character.Mana + inventoryItem.Item.ManaRestore);
+            restoredMana = character.Mana - previousMana;
+        }
+
+        // Decrement stack or delete entry if depleted
+        inventoryItem.Quantity--;
+        int remainingQuantity = inventoryItem.Quantity;
+
+        if (inventoryItem.Quantity <= 0)
+        {
+            _context.InventoryItems.Remove(inventoryItem);
+        }
+
+        await _context.SaveChangesAsync();
+
+        string message = restoredHealth > 0
+            ? $"Restored {restoredHealth} HP."
+            : $"Restored {restoredMana} MP.";
+
+        return Ok(new UseItemResponseDto(
+            message,
+            restoredHealth > 0 ? restoredHealth : restoredMana,
+            character.Health,
+            character.Mana,
+            remainingQuantity
+        ));
+    }
+
     // PUT: api/characters/{characterId}/inventory/{inventoryItemId}/toggle-equip
     [HttpPut("{inventoryItemId:guid}/toggle-equip")]
     public async Task<IActionResult> ToggleEquipItem(Guid characterId, Guid inventoryItemId)
@@ -139,7 +200,6 @@ public class InventoryController : ControllerBase
             return BadRequest("Cannot equip consumable or material items.");
         }
 
-        // If equipping, unequip any other item of the same type currently equipped
         if (!inventoryItem.IsEquipped)
         {
             var equippedSameType = await _context.InventoryItems

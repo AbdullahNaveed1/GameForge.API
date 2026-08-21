@@ -35,6 +35,7 @@ var connectionString = "Host=localhost;Port=5432;Database=GameForgeDb;Username=p
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
+
 // Register Redis Connection Multiplexer (Graceful fallback if offline locally)
 var redisConnection = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379,abortConnect=false";
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
@@ -44,6 +45,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     config.ConnectTimeout = 3000;
     return ConnectionMultiplexer.Connect(config);
 });
+
+// Register Leaderboard Service
 builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
 
 // Configure IP Rate Limiting
